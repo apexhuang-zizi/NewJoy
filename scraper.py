@@ -1,42 +1,62 @@
 import os
 import requests
+import urllib.parse
 from datetime import datetime
 
 def fetch_kickstarter_projects():
-    # 自动从 GitHub 环境变量读取代理，若本地运行没设变量则为 None
-    proxy_url = os.environ.get('MY_PROXY')
+    # 1. 从环境变量读取原始信息
+    user = os.environ.get('DI_USER')
+    password = os.environ.get('DI_PASS')
+    host = os.environ.get('DI_HOST')
+    
+    if not all([user, password, host]):
+        print("❌ 错误：GitHub Secrets (DI_USER, DI_PASS, DI_HOST) 配置不全！")
+        return None
+
+    # 2. 自动进行 URL 转码，解决空格和特殊字符问题
+    encoded_user = urllib.parse.quote_plus(user)
+    encoded_pass = urllib.parse.quote_plus(password)
+    proxy_url = f"http://{encoded_user}:{encoded_pass}@{host}"
     
     proxies = {
         "http": proxy_url,
         "https": proxy_url
-    } if proxy_url else None
+    }
 
-    # Kickstarter 科技类接口
     url = "https://www.kickstarter.com/discover/advanced.json?category_id=16&sort=magic&page=1"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-        "X-Requested-With": "XMLHttpRequest"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
     }
     
+    print(f"📡 正在尝试通过代理连接 (目标: {host})...")
+    
     try:
-        response = requests.get(url, headers=headers, proxies=proxies, timeout=25)
+        # 增加超时时间到 30 秒
+        response = requests.get(url, headers=headers, proxies=proxies, timeout=30)
         response.raise_for_status()
-        print("✅ 数据抓取成功！" if not proxies else "✅ 代理访问成功！")
+        print("✅ 代理认证成功，数据已获取！")
         return response.json().get('projects', [])
+    except requests.exceptions.ProxyError:
+        print("❌ 代理连接失败：请检查 DI_HOST 是否正确，或 DataImpulse 服务是否可用。")
+    except requests.exceptions.HTTPError as e:
+        if "407" in str(e):
+            print("❌ 认证失败 (407)：请检查 DataImpulse 的用户名和密码是否正确。")
+        else:
+            print(f"❌ 网络请求错误: {e}")
     except Exception as e:
-        print(f"❌ 抓取失败: {e}")
-        return None
+        print(f"❌ 发生未知错误: {type(e).__name__} - {e}")
+    
+    return None
 
 def generate_html(projects):
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
     
     if not projects:
-        # 失败时的占位内容
         content = """
-        <div style="text-align:center; padding:50px; background:white; border-radius:15px;">
-            <h2 style="color:#e74c3c;">📡 信号暂时中断</h2>
-            <p>目前无法获取 Kickstarter 数据。可能原因：代理配置有误或 IP 流量耗尽。</p>
-            <p>请检查 GitHub Secrets 中的 <b>PROXY_URL</b> 格式。</p>
+        <div style="text-align:center; padding:50px; background:white; border-radius:15px; border: 2px solid #e74c3c;">
+            <h2 style="color:#e74c3c;">📡 代理通信故障</h2>
+            <p>请点击 GitHub Actions 查看详细报错日志。</p>
+            <p>常见原因：1. 密码含特殊字符需重新配置 2. 代理流量耗尽 3. 账号被封禁。</p>
         </div>
         """
     else:
@@ -64,21 +84,11 @@ def generate_html(projects):
     html_template = f"""
     <!DOCTYPE html>
     <html lang="zh">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>众筹灵感监控站</title>
-    </head>
-    <body style="font-family:'Segoe UI', sans-serif; background:#f0f2f5; padding:30px; color:#333;">
-        <header style="text-align:center; margin-bottom:40px;">
-            <h1 style="color:#1a365d; margin-bottom:5px;">🚀 全球硬件众筹看板</h1>
-            <p style="color:#7f8c8d;">同步国际最前沿智能家居与极客产品灵感</p>
-        </header>
+    <head><meta charset="UTF-8"><title>众筹灵感监控站</title></head>
+    <body style="font-family:sans-serif; background:#f0f2f5; padding:30px;">
+        <h1 style="text-align:center; color:#1a365d;">🚀 全球硬件众筹看板</h1>
         <div style="max-width:1200px; margin:auto;">{content}</div>
-        <footer style="text-align:center; margin-top:50px; color:#95a5a6; font-size:12px;">
-            <p>最后更新时间：{now} (UTC)</p>
-            <p>@ 版权归属：KINGWOOD VIETNAM</p>
-        </footer>
+        <hr><p style="text-align:center; color:#95a5a6;">最后更新：{now} (UTC) | @ KINGWOOD VIETNAM</p>
     </body>
     </html>
     """
