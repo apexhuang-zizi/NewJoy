@@ -3,11 +3,11 @@ on:
   push:
     branches: [ main ]
   schedule:
-    - cron: '0 0 * * *'  # 每天北京时间早上 8:00 运行
-  workflow_dispatch:      # 【新增】允许你在 Actions 页面点按钮直接运行
+    - cron: '0 0 * * *' 
+  workflow_dispatch: # 允许你点击按钮手动运行
 
 env:
-  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true # 解决 2026 年 Node.js 20 弃用问题
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true 
 
 permissions:
   contents: write
@@ -31,8 +31,10 @@ jobs:
 
       - name: Run Scraper
         env:
-          # 【关键】从 GitHub Secrets 读取加密的代理地址
-          MY_PROXY: ${{ secrets.PROXY_URL }} 
+          # 将三个独立的 Secret 传给 Python
+          DI_USER: ${{ secrets.DI_USER }}
+          DI_PASS: ${{ secrets.DI_PASS }}
+          DI_HOST: ${{ secrets.DI_HOST }}
         run: |
           python scraper.py
           if [ ! -f index.html ]; then
@@ -46,4 +48,4 @@ jobs:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           publish_dir: ./
           publish_branch: gh-pages
-          force_orphan: true # 确保文件同步最彻底
+          force_orphan: true
