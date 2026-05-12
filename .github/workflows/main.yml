@@ -37,6 +37,8 @@ jobs:
           git config --global user.email "actions@github.com"
           git add index.html
           git commit -m "Auto-update trends" || exit 0
+          # 关键修改点：先拉取并合并云端的改动，再推上去
+          git pull --rebase origin main
           git push
 
       - name: Send Email Notification
