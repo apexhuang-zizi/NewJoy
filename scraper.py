@@ -4,7 +4,7 @@ from datetime import datetime
 import re
 
 def fetch_data():
-    print("=== 目标切换：尝试抓取 Indiegogo 硬件项目 ===")
+    print("=== 目标切换：尝试抓取 ycombinator 硬件项目 ===")
     proxy_url = os.environ.get('MY_PROXY_URL')
     if not proxy_url:
         return None
@@ -12,7 +12,7 @@ def fetch_data():
     proxies = {"http": proxy_url, "https": proxy_url}
     
     # 目标换成 Indiegogo 的探索页面
-    url = "https://news.ycombinator.com/ (Hacker News)"
+    url = "[https://news.ycombinator.com/](https://news.ycombinator.com/)"
     
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
