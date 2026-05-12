@@ -3,74 +3,76 @@ import requests
 from datetime import datetime
 import time
 import random
+import re
 
 def fetch_data():
-    print("=== 开始数据抓取 (增强伪装版) ===")
+    print("=== 切换至网页解析模式 (绕过 API 拦截) ===")
     proxy_url = os.environ.get('MY_PROXY_URL')
-    
     if not proxy_url:
-        print("❌ 错误：未检测到 PROXY_URL")
         return None
 
     proxies = {"http": proxy_url, "https": proxy_url}
     
-    # 这里的 URL 换一个参数，有时候能绕过缓存拦截
-    url = "https://www.kickstarter.com/discover/advanced.json?category_id=16&sort=magic&page=1"
+    # 尝试访问网页版搜索结果，而不是 JSON API
+    url = "https://www.kickstarter.com/discover/advanced?category_id=16&sort=newest"
     
-    # 核心伪装：加入更完整的请求头，模拟真实浏览器访问
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/javascript, */*; q=0.01",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.kickstarter.com/discover",
-        "X-Requested-With": "XMLHttpRequest",
-        "DNT": "1"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Upgrade-Insecure-Requests": "1",
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Cache-Control": "max-age=0"
     }
     
     try:
-        # 随机延迟 1-5 秒，模仿人类点击
-        wait_time = random.uniform(1, 5)
-        print(f"📡 等待 {wait_time:.2f} 秒后发起请求...")
-        time.sleep(wait_time)
-        
+        # 随机增加一个更长的等待，模拟真人打开网页
+        time.sleep(random.uniform(3, 7))
         response = requests.get(url, headers=headers, proxies=proxies, timeout=30)
-        print(f"📡 代理响应状态码: {response.status_code}")
+        print(f"📡 网页响应状态码: {response.status_code}")
         
         if response.status_code == 200:
-            return response.json().get('projects', [])
+            # 使用正则简单抓取项目名称和链接（因为没装 BeautifulSoup，我们用正则最快）
+            content = response.text
+            # 匹配项目链接和名称的简化正则
+            links = re.findall(r'href="(/projects/[^?"]+)', content)
+            # 去重
+            unique_links = list(dict.fromkeys(links))
+            print(f"✅ 成功从网页提取到 {len(unique_links)} 个链接")
+            return unique_links
         elif response.status_code == 403:
-            print("⚠️ 仍然被拦截 (403)。建议在代理后台更换 IP 节点或国家（如固定为美国）。")
+            print("❌ 代理被彻底封锁。原因：DataImpulse 的 IP 质量已被目标站列入黑名单。")
     except Exception as e:
-        print(f"❌ 抓取异常: {e}")
+        print(f"❌ 异常: {e}")
     return None
 
-def write_html(projects):
+def write_html(links):
     now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    cards = ""
-    if projects:
-        for p in projects[:12]:
-            name = p.get('name', 'N/A')
-            link = p.get('urls', {}).get('web', {}).get('project', '#')
-            cards += f'<li><a href="{link}" target="_blank">{name}</a></li>'
+    list_items = ""
+    if links:
+        for link in links[:15]:
+            # 提取名字
+            name = link.split('/')[-1].replace('-', ' ').title()
+            full_url = f"https://www.kickstarter.com{link}"
+            list_items += f'<li><a href="{full_url}" target="_blank">{name}</a></li>'
     
-    html_content = f"""
+    html = f"""
     <!DOCTYPE html>
     <html>
-    <head><meta charset="UTF-8"><title>Monitor Dashboard</title></head>
-    <body style="font-family:sans-serif; padding:20px; line-height:1.6;">
-        <h1>Global Trends Monitor</h1>
-        <p>Status: {"Success" if projects else "Failed (Check Logs)"}</p>
+    <head><meta charset="UTF-8"><title>Trends Monitor</title></head>
+    <body style="font-family:sans-serif; padding:20px;">
+        <h2>Global Hardware Trends</h2>
+        <p>Last Update: {now}</p>
         <hr>
-        <ul>{cards if cards else "<li>No data available - Service Blocked</li>"}</ul>
-        <hr>
-        <p style="color:#666;">Last Update: {now}</p>
+        <ul>{list_items if list_items else "<li>Wait for IP Rotation...</li>"}</ul>
     </body>
     </html>
     """
     with open("index.html", "w", encoding="utf-8") as f:
-        f.write(html_content)
-    print("✅ index.html 已更新")
+        f.write(html)
 
 if __name__ == "__main__":
-    data = fetch_data()
-    write_html(data)
+    links = fetch_data()
+    write_html(links)
