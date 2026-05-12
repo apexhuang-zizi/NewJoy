@@ -14,7 +14,7 @@ def fetch_data():
     proxies = {"http": proxy_url, "https": proxy_url}
     
     # 回归最稳妥的搜索页面
-    url = "https://www.google.com/search?q=kickstarter+hardware"
+    url = "https://www.bing.com/search?q=kickstarter+hardware"
     
     # 这是一套从 2026 年最新版 Chrome 中完全复刻的请求头
     headers = {
