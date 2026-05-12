@@ -12,16 +12,19 @@ permissions:
   id-token: write  # 用于安全验证
 
 jobs:
-  build_and_deploy:
+  build:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+        with:
+          # 关键：获取所有历史记录，防止拉取失败
+          fetch-depth: 0 
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: '3.9'
 
       - name: Install dependencies
         run: pip install requests
@@ -36,17 +39,16 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add index.html
-          # 先提交，如果没改动也不报错
+          # 如果没有变化就退出，不报错
           git commit -m "Auto-update trends" || exit 0
-          # 【核心步骤】强制拉取云端改动并与本地合并
+          # 关键操作：先拉取远程改动并强制合并
           git pull origin main --rebase
-          # 推送
           git push origin main
-          
+
       - name: Send Email Notification
+        if: success() # 只有上面成功了才发邮件
         uses: dawidd6/action-send-mail@v3
         with:
-          # QQ 邮箱的 SMTP 服务器设置
           server_address: smtp.qq.com
           server_port: 465
           username: ${{ secrets.MAIL_USERNAME }}
@@ -54,13 +56,7 @@ jobs:
           subject: 🚀 每日技术趋势报告 (Hacker News)
           to: ${{ secrets.MAIL_RECEIVER }}
           from: "Trend Monitor Agent"
-          # 邮件正文：告知页面已更新并附带预览
           body: |
-            你好！
-            
-            今天的技术资讯已经抓取完成并同步至你的网页。
-            查看实时页面：https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/
-            
-            抓取时间：${{ env.CURRENT_TIME }} (UTC)
-          # 把生成的 index.html 作为附件发送，这样你在邮件里直接就能看
+            你好！今天的技术资讯已经抓取完成并同步至你的网页。
+            查看链接：https://github.com/${{ github.repository }}
           attachments: index.html
