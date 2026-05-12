@@ -2,7 +2,7 @@ name: Auto Scraper
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: # 允许你手动点按钮
+  workflow_dispatch: 
 
 permissions:
   contents: write
@@ -12,6 +12,11 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # 新增下面这三行，告诉 GitHub 这是 Pages 部署环境
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -26,7 +31,7 @@ jobs:
 
       - name: Run Scraper
         env:
-          # 映射你唯一的 Secret: PROXY_URL
+          # 确保这里的 Secret 名字 PROXY_URL 准确无误
           MY_PROXY_URL: ${{ secrets.PROXY_URL }}
         run: |
           python scraper.py
@@ -37,4 +42,5 @@ jobs:
           path: '.'
 
       - name: Deploy to GitHub Pages
+        id: deployment
         uses: actions/deploy-pages@v4
