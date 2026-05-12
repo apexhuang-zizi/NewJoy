@@ -1,9 +1,8 @@
-# VERSION: 2026-MAY-DEBUG-001
-name: FINAL_SCRAPER_WORKFLOW
+name: Auto_Scraper_Final
 on:
   push:
     branches: [ main ]
-  workflow_dispatch: 
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,29 +12,27 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    environment:
-      name: github-pages
     steps:
-      - name: 🚀 STEP_1_CHECKOUT
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: 🚀 STEP_2_PYTHON_ENV
+      - name: Setup_Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
-      - name: 🚀 STEP_3_DEPENDENCIES
+      - name: Install_Requests
         run: pip install requests
 
-      - name: 🚀 STEP_4_RUN_PYTHON_NOW
+      - name: Run_Scraper_Script
         env:
           MY_PROXY_URL: ${{ secrets.PROXY_URL }}
         run: python scraper.py
 
-      - name: 🚀 STEP_5_UPLOAD
+      - name: Upload_Artifact
         uses: actions/upload-pages-artifact@v3
         with:
           path: '.'
 
-      - name: 🚀 STEP_6_DEPLOY
+      - name: Deploy
         uses: actions/deploy-pages@v4
