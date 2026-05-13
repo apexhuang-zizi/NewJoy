@@ -1,42 +1,35 @@
 
     <html>
-    <head>
-        <script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script>
-    </head>
-    <body style='background:#f0fdf4; font-family:sans-serif; padding:20px;'>
-        <div style='max-width:800px; margin:auto;'>
-            
-    <div style="margin-bottom:20px; padding:15px; background:white; border-radius:8px;">
-        <a href="index.html" style="margin-right:20px; text-decoration:none; color:#ff6600; font-weight:bold;">🏠 HN Tech / 技术趋势</a>
-        <a href="news.html" style="margin-right:20px; text-decoration:none; color:#2563eb; font-weight:bold;">🌍 World News / 国际要闻</a>
-        <a href="finance.html" style="text-decoration:none; color:#059669; font-weight:bold;">📈 Finance / 金融看板</a>
+    <head><script src="https://cdn.jsdelivr.net/npm/echarts/dist/echarts.min.js"></script></head>
+    <body style='font-family:sans-serif; padding:30px; background:#f4f7f6;'>
+        <div style='margin-bottom:20px; text-align:center;'>
+        <a href='index.html'>🏠 技术趋势</a> | <a href='news.html'>🌍 国际要闻</a> | <a href='finance.html'>📈 金融看板</a>
     </div>
-    
-            <div style="background:white; padding:20px; border-radius:12px; margin-bottom:20px;">
-                <h2 style="color:#059669;">Finance Dashboard / 金融看板</h2>
-                <div style="display:flex; justify-content:space-between;">
-                    <table style="width:45%; border-collapse:collapse;"><tr><td style='padding:8px; border-bottom:1px solid #eee;'>USD/CNY</td><td style='text-align:right; font-weight:bold;'>6.7903</td></tr><tr><td style='padding:8px; border-bottom:1px solid #eee;'>VND/CNY</td><td style='text-align:right; font-weight:bold;'>0.0</td></tr><tr><td style='padding:8px; border-bottom:1px solid #eee;'>FPT (FPT)</td><td style='text-align:right; font-weight:bold;'>70700.0</td></tr><tr><td style='padding:8px; border-bottom:1px solid #eee;'>Vietcombank (VCB)</td><td style='text-align:right; font-weight:bold;'>60100.0</td></tr><tr><td style='padding:8px; border-bottom:1px solid #eee;'>Vinamilk (VNM)</td><td style='text-align:right; font-weight:bold;'>59300.0</td></tr><tr><td style='padding:8px; border-bottom:1px solid #eee;'>Hoa Phat (HPG)</td><td style='text-align:right; font-weight:bold;'>27100.0</td></tr><tr><td style='padding:8px; border-bottom:1px solid #eee;'>Mobile World (MWG)</td><td style='text-align:right; font-weight:bold;'>83700.0</td></tr><tr><td style='padding:8px; border-bottom:1px solid #eee;'>BIDV (BID)</td><td style='text-align:right; font-weight:bold;'>42800.0</td></tr><tr><td style='padding:8px; border-bottom:1px solid #eee;'>Vinhomes (VHM)</td><td style='text-align:right; font-weight:bold;'>152500.0</td></tr><tr><td style='padding:8px; border-bottom:1px solid #eee;'>Masan (MSN)</td><td style='text-align:right; font-weight:bold;'>78900.0</td></tr><tr><td style='padding:8px; border-bottom:1px solid #eee;'>PV Gas (GAS)</td><td style='text-align:right; font-weight:bold;'>81800.0</td></tr><tr><td style='padding:8px; border-bottom:1px solid #eee;'>SSI Securities (SSI)</td><td style='text-align:right; font-weight:bold;'>27800.0</td></tr><tr><td style='padding:8px; border-bottom:1px solid #eee;'>VN-Index</td><td style='text-align:right; font-weight:bold;'>0.0</td></tr><tr><td style='padding:8px; border-bottom:1px solid #eee;'>VN30 Index</td><td style='text-align:right; font-weight:bold;'>0.0</td></tr></table>
-                    <div style="width:50%; background:#fef3c7; padding:15px; border-radius:8px; height:fit-content;">
-                        <h3>✈️ Flight Price / 机票监控</h3>
-                        <p>SGN - CAN (Direct): <b style="font-size:24px; color:#b45309;">$0</b></p>
-                        <small>Ho Chi Minh to Guangzhou / 胡志明-广州</small>
-                    </div>
-                </div>
+        <div style="display:flex; gap:20px;">
+            <div style="background:#fff; padding:20px; border-radius:10px; flex:1;">
+                <h3>📊 实时看板</h3>
+                <p>美元/人民币: <b>6.7903</b></p>
+                <p>越南盾/人民币(1k): <b>0.258</b></p>
+                <p>SGN-CAN 机票起价: <b>$280</b></p>
+                <hr>
+                <table width="100%"><tr><td>FPT</td><td align='right'><b>70700.0</b></td></tr><tr><td>Vietcombank</td><td align='right'><b>60100.0</b></td></tr><tr><td>Vinamilk</td><td align='right'><b>59300.0</b></td></tr><tr><td>Hoa Phat</td><td align='right'><b>27100.0</b></td></tr><tr><td>Mobile World</td><td align='right'><b>83700.0</b></td></tr><tr><td>BIDV</td><td align='right'><b>42800.0</b></td></tr><tr><td>Vinhomes</td><td align='right'><b>152500.0</b></td></tr><tr><td>Masan</td><td align='right'><b>78900.0</b></td></tr><tr><td>PV Gas</td><td align='right'><b>81800.0</b></td></tr><tr><td>SSI</td><td align='right'><b>27800.0</b></td></tr><tr><td>VN-Index</td><td align='right'><b>0.0</b></td></tr><tr><td>VN30</td><td align='right'><b>0.0</b></td></tr></table>
             </div>
-            <div style="background:white; padding:20px; border-radius:12px;">
-                <div id="main" style="width:100%; height:300px;"></div>
+            <div style="flex:2;">
+                <div id="chart1" style="height:300px; background:#fff; margin-bottom:20px; border-radius:10px;"></div>
+                <div id="chart2" style="height:300px; background:#fff; border-radius:10px;"></div>
             </div>
         </div>
         <script>
-            var myChart = echarts.init(document.getElementById('main'));
-            myChart.setOption({
-                title: { text: 'USD/CNY Trend / 美元汇率趋势' },
-                tooltip: { trigger: 'axis' },
-                xAxis: { data: ['2026-05-13'] },
-                yAxis: { scale: true },
-                series: [{ name: 'USD/CNY', type: 'line', data: [6.7903], smooth: true, color: '#059669' }]
+            var common = { tooltip:{trigger:'axis'}, xAxis:{data:['2026-05-13']}, yAxis:{scale:true} };
+            echarts.init(document.getElementById('chart1')).setOption({
+                ...common, title:{text:'汇率趋势 (Exchange Rate)'},
+                series:[{name:'USD/CNY', type:'line', data:[6.7903], color:'#10b981'},
+                        {name:'VND/CNY(1k)', type:'line', data:[0.258], color:'#3b82f6'}]
+            });
+            echarts.init(document.getElementById('chart2')).setOption({
+                ...common, title:{text:'机票价格与股市指数趋势'},
+                series:[{name:'Flight($)', type:'line', data:[280.0], color:'#f59e0b'},
+                        {name:'VN-Index', type:'line', data:[0.0], color:'#ef4444'}]
             });
         </script>
-    </body>
-    </html>
-    
+    </body></html>
