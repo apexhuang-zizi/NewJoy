@@ -26,6 +26,7 @@ jobs:
         run: |
           pip install requests
           pip install -q -U google-generativeai 
+          pip install requests pandas yfinance beautifulsoup4
 
       - name: Execute Scraper
         env:
@@ -38,10 +39,8 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add index.html
-          # 如果内容没变，直接跳过，不报错
-          git commit -m "Auto-update trends: $(date)" || exit 0
-          # 使用 --force 强制覆盖远程，永不报错冲突
+          git add index.html finance.html news.html history.csv  # 确认这四个文件都被添加
+          git commit -m "Auto-update all dashboards: $(date)" || exit 0
           git push origin main --force
 
       # --- 关键：直接触发网页发布（无需等待） ---
