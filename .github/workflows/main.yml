@@ -24,7 +24,6 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install requests
           pip install -q -U google-generativeai 
           pip install requests pandas yfinance beautifulsoup4
 
