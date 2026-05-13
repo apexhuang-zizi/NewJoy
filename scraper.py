@@ -12,7 +12,7 @@ import xml.etree.ElementTree as ET
 # --- 1. 配置区 ---
 # 使用 models/ 前缀防止某些 API 版本的 404 错误
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-model = genai.GenerativeModel('models/gemini-1.5-flash')
+model = genai.GenerativeModel('models/gemini-2.5-flash')
 
 def translate_text(text, is_tech=True):
     """通用的 Gemini 翻译函数，带容错机制"""
