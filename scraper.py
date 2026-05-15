@@ -3,34 +3,167 @@ import requests
 import pandas as pd
 import yfinance as yf
 from datetime import datetime
+import re
 import time
 from bs4 import BeautifulSoup
 import google.generativeai as genai
+import xml.etree.ElementTree as ET
 
 # ---------- 1. 配置区 ----------
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
-model = genai.GenerativeModel('gemini-1.5-flash')
+model = genai.GenerativeModel('models/gemini-2.5-flash')
 
-# ---------- 2. 核心功能：机票抓取 (SerpApi) ----------
-def fetch_flight_data_v2(target_date):
-    """抓取南航直达机票，人民币计价"""
+def translate_text(text, is_tech=True):
+    """通用的 Gemini 翻译函数，带容错机制"""
+    if not text:
+        return ""
+    domain = "技术新闻" if is_tech else "国际新闻要闻"
+    prompt = f"你是一个专业的{domain}翻译。请将以下标题翻译成地道的中文。只需返回翻译结果：\n\n{text}"
+    try:
+        response = model.generate_content(prompt)
+        return response.text.strip()
+    except Exception as e:
+        print(f"⚠️ 翻译异常: {e}")
+        return "翻译处理中..."
+
+# ---------- 2. 抓取技术趋势 (Hacker News) ----------
+def fetch_hn_tech():
+    print("🚀 正在抓取 Hacker News 技术趋势 (20条)...")
+    url = "https://news.ycombinator.com/"
+    headers = {"User-Agent": "Mozilla/5.0"}
+    try:
+        r = requests.get(url, headers=headers, timeout=20)
+        soup = BeautifulSoup(r.text, 'html.parser')
+        results = []
+        for row in soup.select('span.titleline')[:20]:
+            a_tag = row.find('a')
+            if not a_tag:
+                continue
+            title = a_tag.get_text(strip=True)
+            link = a_tag.get('href')
+            if not link:
+                continue
+            if link.startswith('item?'):
+                full_url = f"https://news.ycombinator.com/{link}"
+            elif link.startswith('http'):
+                full_url = link
+            else:
+                full_url = f"https://news.ycombinator.com/{link}"
+            cn_title = translate_text(title, is_tech=True)
+            results.append({'title': title, 'cn_title': cn_title, 'url': full_url})
+            time.sleep(0.3)
+        return results
+    except Exception as e:
+        print(f"❌ Hacker News 抓取失败: {e}")
+        return []
+
+# ---------- 3. 抓取国际要闻 (BBC World RSS) ----------
+def fetch_world_news():
+    print("🌍 正在抓取国际要闻 (BBC)...")
+    url = "https://feeds.bbci.co.uk/news/world/rss.xml"
+    try:
+        r = requests.get(url, timeout=20)
+        root = ET.fromstring(r.content)
+        news_items = []
+        for item in root.findall('.//item')[:20]:
+            title = item.find('title').text
+            link = item.find('link').text
+            if not link.startswith('http'):
+                link = 'https://www.bbc.com' + link
+            cn_title = translate_text(title, is_tech=False)
+            news_items.append({'title': title, 'cn_title': cn_title, 'url': link})
+            time.sleep(0.3)
+        return news_items
+    except Exception as e:
+        print(f"❌ BBC 抓取失败: {e}")
+        return []
+
+# ---------- 4. 金融数据：汇率 + 股票价格 ----------
+def get_safe_price(code):
+    """安全的股票/汇率获取，失败返回 0.0"""
+    try:
+        ticker = yf.Ticker(code)
+        price = ticker.fast_info.get('last_price', None)
+        if price and price > 0:
+            return round(price, 4)
+        hist = ticker.history(period="1d")
+        if not hist.empty and hist['Close'].iloc[-1] > 0:
+            return round(hist['Close'].iloc[-1], 4)
+    except Exception:
+        pass
+    return 0.0
+
+def get_exchange_rate_fallback():
+    """备用汇率接口"""
+    try:
+        resp = requests.get("https://api.exchangerate.host/latest?base=USD", timeout=10)
+        data = resp.json()
+        cny = data['rates'].get('CNY')
+        vnd = data['rates'].get('VND')
+        if cny and vnd:
+            return cny, vnd
+    except Exception:
+        pass
+    return None, None
+
+def fetch_finance():
+    print("📊 正在获取金融数据 (汇率+越南股票)...")
+    # 汇率
+    usd_cny = get_safe_price("CNY=X")
+    usd_vnd = get_safe_price("VND=X")
+    if usd_cny == 0.0 or usd_vnd == 0.0:
+        fallback_cny, fallback_vnd = get_exchange_rate_fallback()
+        if fallback_cny and fallback_vnd:
+            usd_cny = fallback_cny
+            usd_vnd = fallback_vnd
+            print("⚠️ 使用备用汇率接口获取数据")
+    if usd_cny == 0.0:
+        usd_cny = 7.25
+        print("⚠️ 美元/人民币采用默认值 7.25")
+    if usd_vnd == 0.0:
+        usd_vnd = 25400.0
+        print("⚠️ 美元/越南盾采用默认值 25400")
+    vnd_cny_1k = (usd_cny / usd_vnd) * 1000
+
+    # 越南股票
+    stocks = {
+        "FPT": "FPT.VN", "Vietcombank": "VCB.VN", "Vinamilk": "VNM.VN", "Hoa Phat": "HPG.VN",
+        "Mobile World": "MWG.VN", "BIDV": "BID.VN", "Vinhomes": "VHM.VN", "Masan": "MSN.VN",
+        "PV Gas": "GAS.VN", "SSI": "SSI.VN"
+    }
+    stock_data = {}
+    for name, code in stocks.items():
+        price = get_safe_price(code)
+        if price == 0.0:
+            # 重试一次
+            time.sleep(1)
+            price = get_safe_price(code)
+        stock_data[name] = price
+
+    # 越南指数（仅展示，不用于曲线）
+    vn_index = get_safe_price("^VNINDEX")  # yfinance 正确代码
+    if vn_index == 0.0:
+        print("⚠️ 无法获取 VN-Index，将显示为 0")
+
+    return {
+        "USD_CNY": round(usd_cny, 4),
+        "VND_CNY_1k": round(vnd_cny_1k, 4),
+        "Stocks": stock_data,
+        "VN_Index": vn_index
+    }
+
+# ---------- 5. 机票价格监控 (当日 + 固定日期 2027-02-01) ----------
+def fetch_flight_data_v2(target_date, is_fixed=False):
+    """通过 SerpApi 抓取南航直达机票数据"""
     api_key = os.environ.get("SERPAPI_KEY")
     if not api_key:
         return 0, "<tr><td colspan='3'>未配置 API Key</td></tr>"
     
-    # 必须安装了 google-search-results 才能执行下面这行
     from serpapi.google_search import GoogleSearch
-    
     params = {
-        "engine": "google_flights",
-        "departure_id": "SGN",
-        "arrival_id": "CAN",
-        "outbound_date": target_date,
-        "currency": "CNY",  # 人民币计价
-        "hl": "zh-cn",
-        "api_key": api_key,
-        "type": "1",
-        "stops": "1"
+        "engine": "google_flights", "departure_id": "SGN", "arrival_id": "CAN",
+        "outbound_date": target_date, "currency": "CNY", "hl": "zh-cn",
+        "api_key": api_key, "type": "1", "stops": "1"
     }
     try:
         search = GoogleSearch(params)
@@ -54,143 +187,11 @@ def fetch_flight_data_v2(target_date):
         rows_html = "".join([f"<tr><td style='padding:8px;border-bottom:1px solid #eee;'>{f['flight_number']}</td><td style='padding:8px;border-bottom:1px solid #eee;'>￥{f['price']}</td><td style='padding:8px;border-bottom:1px solid #eee;'>{f['departure']}</td></tr>" for f in cz_flights[:5]])
         return lowest_price, rows_html
     except Exception as e:
-        print(f"机票抓取错误: {e}")
-        return 0, "<tr><td colspan='3'>抓取异常</td></tr>"
+        return 0, f"<tr><td colspan='3'>错误: {str(e)}</td></tr>"
 
 def fetch_today_flight_price():
     target = (pd.Timestamp.now() + pd.Timedelta(days=14)).strftime('%Y-%m-%d')
     return fetch_flight_data_v2(target)
 
 def fetch_fixed_date_flight():
-    return fetch_flight_data_v2("2027-02-01")
-
-# ---------- 3. 股票数据 (越南) ----------
-def fetch_stock_prices():
-    stocks = ["FPT.VN", "VCB.VN", "VIC.VN", "VNM.VN"]
-    data = {}
-    for s in stocks:
-        try:
-            ticker = yf.Ticker(s)
-            price = ticker.history(period="1d")['Close'].iloc[-1]
-            data[s.split('.')[0]] = round(price, 2)
-        except: data[s.split('.')[0]] = 0
-    return data
-
-# ---------- 4. 主逻辑 ----------
-def main():
-    # 模拟抓取汇率（请保留你原代码中那段真正的 BeautifulSoup 抓取逻辑）
-    usd_vnd, cny_vnd = 25400, 3500 
-
-    # 机票数据获取
-    flight_price, flight_rows_html = fetch_today_flight_price()
-    fixed_flight_price, _ = fetch_fixed_date_flight()
-    
-    stock_data = fetch_stock_prices()
-    today_str = datetime.now().strftime("%Y-%m-%d")
-
-    # 更新历史 CSV
-    history_file = "history.csv"
-    if os.path.exists(history_file):
-        history_df = pd.read_csv(history_file)
-    else:
-        history_df = pd.DataFrame(columns=['Date', 'USD_VND', 'CNY_VND', 'Flight_Price', 'Fixed_Flight'])
-
-    new_row = pd.DataFrame([{
-        'Date': today_str, 'USD_VND': usd_vnd, 'CNY_VND': cny_vnd, 
-        'Flight_Price': flight_price, 'Fixed_Flight': fixed_flight_price
-    }])
-    history_df = pd.concat([history_df, new_row]).drop_duplicates('Date', keep='last').tail(90)
-    history_df.to_csv(history_file, index=False)
-
-    # 股票 CSV
-    stock_file = "stock_history.csv"
-    if os.path.exists(stock_file):
-        stock_df = pd.read_csv(stock_file)
-    else:
-        stock_df = pd.DataFrame(columns=['Date'] + list(stock_data.keys()))
-    
-    stock_new_row = pd.DataFrame([{"Date": today_str, **stock_data}])
-    stock_df = pd.concat([stock_df, stock_new_row]).drop_duplicates('Date', keep='last').tail(90)
-    stock_df.to_csv(stock_file, index=False)
-
-    # 准备图表数据
-    dates = history_df['Date'].tolist()
-    flight_vals = history_df['Flight_Price'].tolist()
-    fixed_vals = history_df['Fixed_Flight'].fillna(0).tolist()
-    # 股票系列生成逻辑...
-    stock_series = []
-    for s_name in stock_data.keys():
-        vals = stock_df[s_name].tolist()
-        stock_series.append(f"{{ name: '{s_name}', type: 'line', data: {vals}, smooth: true }}")
-    stock_series_str = ",".join(stock_series)
-
-    # 生成 HTML
-    finance_html = f"""
-<!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-    <meta charset="UTF-8">
-    <title>金融看板</title>
-    <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
-    <style>
-        body {{ font-family: sans-serif; background: #f4f7f6; padding: 20px; }}
-        .card {{ background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-        table {{ width: 100%; border-collapse: collapse; margin-top: 10px; }}
-        th {{ background: #f8f9fa; }}
-        .btn {{ padding: 10px 20px; color: white; border: none; border-radius: 5px; cursor: pointer; text-decoration: none; display: inline-block; }}
-    </style>
-</head>
-<body>
-    <div class="card">
-        <h3>✈️ 南航直达明细 (SGN → CAN)</h3>
-        <table>
-            <tr><th>航班号</th><th>价格 (CNY)</th><th>起飞时间</th></tr>
-            {flight_rows_html}
-        </table>
-    </div>
-
-    <div class="card"><div id="chart_flight" style="height:400px;"></div></div>
-    <div class="card"><div id="chart_fixed" style="height:400px;"></div></div>
-    <div class="card"><div id="chart_stocks" style="height:400px;"></div></div>
-
-    <div style="text-align:center;">
-        <a href="history.csv" download class="btn" style="background:#3182ce;">📥 下载汇率机票数据</a>
-        <a href="stock_history.csv" download class="btn" style="background:#38a169; margin-left:10px;">📥 下载股票历史数据</a>
-    </div>
-
-    <script>
-        var dates = {dates};
-        var chartF = echarts.init(document.getElementById('chart_flight'));
-        chartF.setOption({{
-            title: {{ text: '南航票价趋势 (14天后参考)' }},
-            tooltip: {{ trigger: 'axis' }},
-            xAxis: {{ data: dates }},
-            yAxis: {{ name: '人民币 (￥)', scale: true }},
-            series: [{{ name: '票价', type: 'line', data: {flight_vals}, color: '#f59e0b', smooth: true }}]
-        }});
-
-        var chartFix = echarts.init(document.getElementById('chart_fixed'));
-        chartFix.setOption({{
-            title: {{ text: '2027-02-01 固定日期追踪' }},
-            tooltip: {{ trigger: 'axis' }},
-            xAxis: {{ data: dates }},
-            yAxis: {{ name: '人民币 (￥)', scale: true }},
-            series: [{{ name: '票价', type: 'line', data: {fixed_vals}, color: '#e53e3e', smooth: true }}]
-        }});
-
-        var chartS = echarts.init(document.getElementById('chart_stocks'));
-        chartS.setOption({{
-            title: {{ text: '越南股票趋势' }},
-            tooltip: {{ trigger: 'axis' }},
-            xAxis: {{ data: dates }},
-            yAxis: {{ name: '越南盾', scale: true }},
-            series: [{stock_series_str}]
-        }});
-    </script>
-</body>
-</html>"""
-    with open("finance.html", "w", encoding="utf-8") as f:
-        f.write(finance_html)
-
-if __name__ == "__main__":
-    main()
+    return fetch_flight_data_v2("2027-02-01", is_fixed=True)
