@@ -65,7 +65,7 @@ def fetch_world_news():
         r = requests.get(url, timeout=20)
         root = ET.fromstring(r.content)
         news_items = []
-        for item in root.findall('.//item')[:12]:
+        for item in root.findall('.//item')[:20]:
             title = item.find('title').text
             link = item.find('link').text
             if not link.startswith('http'):
