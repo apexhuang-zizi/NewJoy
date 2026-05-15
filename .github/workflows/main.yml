@@ -25,7 +25,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install -q -U google-generativeai 
-          # 注意：这里必须是 google-search-results，不能只写 serpapi
+          # 注意这行一定要有 google-search-results
           pip install requests pandas yfinance beautifulsoup4 google-search-results
 
       - name: Execute Scraper
@@ -39,8 +39,7 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # 必须加上 *.csv 确保新产生的历史数据被保存
-          git add index.html finance.html news.html *.csv
+          git add -A  # 关键修改：直接添加所有变更文件，防止报错
           git commit -m "Auto-update all dashboards: $(date)" || exit 0
           git push origin main --force
 
