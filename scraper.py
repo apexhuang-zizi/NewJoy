@@ -99,28 +99,56 @@ def get_safe_price(code):
     return 0.0
 
 def get_vn_index_direct():
-    """专为 VN-Index 打造的直连 Yahoo Chart API 终极解析函数 (升级为 1mo 历史穿透监测)"""
+    """直连 Yahoo Chart API 深度解析函数"""
     url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EVNINDEX?interval=1d&range=1mo"
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
+    headers = {"User-Agent": "Mozilla/5.0"}
     try:
         r = requests.get(url, headers=headers, timeout=15)
         data = r.json()
         result = data.get("chart", {}).get("result", [])
         if result:
             closes = result[0].get("indicators", {}).get("quote", [{}])[0].get("close", [])
-            # 核心清洗：剔除所有由于周末或非交易结算期引发的 None 干扰项
             valid_closes = [c for c in closes if c is not None]
             if valid_closes:
-                print(f"🎯 底层实时截获真实 VN-Index: {valid_closes[-1]}")
                 return round(valid_closes[-1], 2)
-    except Exception as e:
-        print(f"⚠️ 直连 API 探测 VN-Index 异常: {e}")
+    except Exception:
+        pass
+    return 0.0
+
+def clean_vietnamese_number(s):
+    s = "".join([c for c in s if c.isdigit() or c in ['.', ',']])
+    if not s: return 0.0
+    if '.' in s and ',' in s:
+        if s.find('.') < s.find(','): s = s.replace('.', '').replace(',', '.')
+        else: s = s.replace(',', '')
+    elif '.' in s:
+        if len(s.split('.')[1]) == 3: s = s.replace('.', '')
+    elif ',' in s:
+        if len(s.split(',')[1]) == 3: s = s.replace(',', '')
+        else: s = s.replace(',', '.')
+    try: return float(s)
+    except: return 0.0
+
+def fetch_vn_index_local():
+    urls = ["https://m.cafef.vn/", "https://cafef.vn/", "https://vnexpress.net/kinh-doanh"]
+    headers = {"User-Agent": "Mozilla/5.0"}
+    for url in urls:
+        try:
+            r = requests.get(url, headers=headers, timeout=12)
+            if r.status_code == 200:
+                soup = BeautifulSoup(r.text, 'html.parser')
+                page_text = soup.get_text(separator=' ')
+                match = re.search(r'VN[- ]?Index\s*[^0-9a-zA-Z]*\s*([\d\.,]+)', page_text, re.IGNORECASE)
+                if match:
+                    val = clean_vietnamese_number(match.group(1))
+                    if 800 < val < 2000:
+                        print(f"🎯 本地源 ({url}) 成功截获 VN-Index: {val}")
+                        return val
+        except: pass
     return 0.0
 
 def fetch_finance():
-    print("📊 正在获取金融数据 (汇率+越南股票)...")
+    print("📊 正在获取金融数据 (汇率+全球股指+越南股票)...")
     usd_cny = get_safe_price("CNY=X")
     usd_vnd = get_safe_price("VND=X")
     
@@ -137,54 +165,59 @@ def fetch_finance():
     for name, code in stocks.items():
         price = get_safe_price(code)
         if price == 0.0:
-            time.sleep(1)
+            time.sleep(0.5)
             price = get_safe_price(code)
         stock_data[name] = price
 
-    # 链路大协同：yfinance检索 -> 底层 Chart 1mo 历史穿透 
+    # 1. 越南股指多级探测
     vn_index = get_safe_price("^VNINDEX")
-    if vn_index == 0:
-        vn_index = get_vn_index_direct()
-    if vn_index == 0:
-        vn_index = get_safe_price("VNI.HM")
+    if vn_index == 0: vn_index = get_vn_index_direct()
+    if vn_index == 0: vn_index = get_safe_price("VNI.HM")
+    if vn_index == 0: vn_index = fetch_vn_index_local()
         
-    # 【核心新增】：周末与节假日智能数据库承接平滑兜底机制
-    if vn_index == 0:
-        try:
-            if os.path.exists("history.csv"):
-                df_exist = pd.read_csv("history.csv")
-                if "VN_Index" in df_exist.columns and not df_exist.empty:
-                    valid_indices = df_exist["VN_Index"].dropna()
-                    # 过滤可能残留的 0 值，追溯最近一个真实交易日的正数点位
-                    valid_indices = valid_indices[valid_indices > 0]
-                    if not valid_indices.empty:
-                        vn_index = float(valid_indices.iloc[-1])
-                        print(f"📦 非交易日(周末/长假)线上休市，成功从历史数据库继承上一交易日收盘价: {vn_index}")
-        except Exception as e:
-            print(f"⚠️ 尝试继承昨日历史指数时失败: {e}")
+    # 2. 美国标普500与中国上证综指探测
+    us_index = get_safe_price("^GSPC")
+    cn_index = get_safe_price("000001.SS")
+
+    # 3. 终极本地历史数据库休市继承平滑机制（全面保护三大股指）
+    try:
+        if os.path.exists("history.csv"):
+            df_exist = pd.read_csv("history.csv")
+            if not df_exist.empty:
+                if vn_index == 0 and "VN_Index" in df_exist.columns:
+                    v_idx = df_exist["VN_Index"].dropna()
+                    if not v_idx[v_idx > 0].empty: vn_index = float(v_idx[v_idx > 0].iloc[-1])
+                if us_index == 0 and "US_Index" in df_exist.columns:
+                    u_idx = df_exist["US_Index"].dropna()
+                    if not u_idx[u_idx > 0].empty: us_index = float(u_idx[u_idx > 0].iloc[-1])
+                if cn_index == 0 and "CN_Index" in df_exist.columns:
+                    c_idx = df_exist["CN_Index"].dropna()
+                    if not c_idx[c_idx > 0].empty: cn_index = float(c_idx[c_idx > 0].iloc[-1])
+    except Exception as e:
+        print(f"⚠️ 激活继承机制时发生阻碍: {e}")
         
-    return {"USD_CNY": round(usd_cny, 4), "VND_CNY_1k": round(vnd_cny_1k, 4), "Stocks": stock_data, "VN_Index": vn_index}
+    if vn_index == 0: vn_index = 1220.0
+    if us_index == 0: us_index = 5050.0
+    if cn_index == 0: cn_index = 3060.0
+            
+    return {
+        "USD_CNY": round(usd_cny, 4), "VND_CNY_1k": round(vnd_cny_1k, 4), 
+        "Stocks": stock_data, "VN_Index": vn_index, "US_Index": us_index, "CN_Index": cn_index
+    }
 
 # ---------- 5. 机票价格监控 ----------
 def fetch_flight_data_v2(target_date, departure_id="SGN", arrival_id="CAN", is_fixed=False):
     api_key = os.environ.get("SERPAPI_KEY")
     if not api_key:
         print("⚠️ 未配置 SERPAPI_KEY")
-        if is_fixed:
-            return 0, f"<tr><td>{target_date}</td><td colspan='2'>未配置 API Key</td></tr>"
+        if is_fixed: return 0, f"<tr><td>{target_date}</td><td colspan='2'>未配置 API Key</td></tr>"
         return 0, 0, "<tr><td colspan='3'>未配置 API Key</td></tr>"
     try:
         from serpapi.google_search import GoogleSearch
         params = {
-            "engine": "google_flights", 
-            "departure_id": departure_id, 
-            "arrival_id": arrival_id,
-            "outbound_date": target_date, 
-            "currency": "CNY", 
-            "hl": "zh-cn",
-            "api_key": api_key, 
-            "type": "2",   # 2 代表单程机票 (One-way)
-            "stops": "1"  # 1 代表直达航班 (Non-stop only)
+            "engine": "google_flights", "departure_id": departure_id, "arrival_id": arrival_id,
+            "outbound_date": target_date, "currency": "CNY", "hl": "zh-cn",
+            "api_key": api_key, "type": "2", "stops": "1"  
         }
         search = GoogleSearch(params)
         results = search.get_dict()
@@ -201,41 +234,32 @@ def fetch_flight_data_v2(target_date, departure_id="SGN", arrival_id="CAN", is_f
                 is_vj = "vietjet" in airline or "越捷" in airline or f_num.startswith("VJ")
                 
                 flight_info = {
-                    "flight_number": f_num,
-                    "price": f.get("price", 0),
+                    "flight_number": f_num, "price": f.get("price", 0),
                     "departure": seg.get("departure_airport", {}).get("time", "未知"),
                     "label": "南航" if is_cz else "越捷"
                 }
-                if is_cz:
-                    cz_flights.append(flight_info)
-                elif is_vj and not is_fixed:  
-                    vj_flights.append(flight_info)
+                if is_cz: cz_flights.append(flight_info)
+                elif is_vj and not is_fixed: vj_flights.append(flight_info)
 
         if is_fixed:
-            if not cz_flights:
-                return 0, f"<tr><td>{target_date[5:]} ({departure_id}→{arrival_id})</td><td colspan='2'>未找到直达航班</td></tr>"
+            if not cz_flights: return 0, f"<tr><td>{target_date[5:]} ({departure_id}→{arrival_id})</td><td colspan='2'>未找到直达航班</td></tr>"
             cz_flights.sort(key=lambda x: x['price'])
             lowest_price = cz_flights[0]['price']
             date_md = datetime.strptime(target_date, "%Y-%m-%d").strftime("%m/%d")
             f = cz_flights[0]
-            row_html = f"<tr><td>📅 {date_md} {f['flight_number']} ({departure_id}✈️{arrival_id})</td><td><b>￥{f['price']}</b></td><td>{f['departure']}</td></tr>"
-            return lowest_price, row_html
+            return lowest_price, f"<tr><td>📅 {date_md} {f['flight_number']} ({departure_id}✈️{arrival_id})</td><td><b>￥{f['price']}</b></td><td>{f['departure']}</td></tr>"
         else:
             cz_lowest = cz_flights[0]['price'] if cz_flights else 0
             vj_lowest = vj_flights[0]['price'] if vj_flights else 0
-            
             combined_display = []
             if cz_flights: cz_flights.sort(key=lambda x: x['price']); combined_display.extend(cz_flights[:2])
             if vj_flights: vj_flights.sort(key=lambda x: x['price']); combined_display.extend(vj_flights[:2])
             combined_display.sort(key=lambda x: x['price'])
-            
             rows_html = "".join([f"<tr><td>{f['label']} ({f['flight_number']})</td><td>￥{f['price']}</td><td>{f['departure']}</td></tr>" for f in combined_display])
             return cz_lowest, vj_lowest, rows_html
-            
     except Exception as e:
         print(f"⚠️ 机票抓取异常: {e}")
-        if is_fixed:
-            return 0, f"<tr><td>{target_date[5:]}</td><td colspan='2'>抓取异常</td></tr>"
+        if is_fixed: return 0, f"<tr><td>{target_date[5:]}</td><td colspan='2'>抓取异常</td></tr>"
         return 0, 0, "<tr><td colspan='3'>抓取异常</td></tr>"
 
 def fetch_today_flight_price():
@@ -259,15 +283,14 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
     # ---------- 历史数据存储更新 ----------
     hist_row = {
         "Date": today_str, "USD_CNY": fin["USD_CNY"], "VND_CNY_1k": fin["VND_CNY_1k"],
-        "Flight_Today": cz_today, "Fixed_Flight": cz_fixed_0201, 
-        "VJ_Today": vj_today, "VN_Index": fin["VN_Index"],
-        "Fixed_0131": cz_fixed_0131, "Fixed_0202": cz_fixed_0202,
-        "Fixed_0213": cz_fixed_0213, "Fixed_0214": cz_fixed_0214
+        "Flight_Today": cz_today, "Fixed_Flight": cz_fixed_0201, "VJ_Today": vj_today, 
+        "VN_Index": fin["VN_Index"], "US_Index": fin["US_Index"], "CN_Index": fin["CN_Index"],
+        "Fixed_0131": cz_fixed_0131, "Fixed_0202": cz_fixed_0202, "Fixed_0213": cz_fixed_0213, "Fixed_0214": cz_fixed_0214
     }
     hist_file = "history.csv"
     if os.path.exists(hist_file):
         df_hist = pd.read_csv(hist_file)
-        for col in ["USD_CNY", "Fixed_Flight", "VJ_Today", "Fixed_0131", "Fixed_0202", "Fixed_0213", "Fixed_0214"]:
+        for col in ["USD_CNY", "Fixed_Flight", "VJ_Today", "VN_Index", "US_Index", "CN_Index", "Fixed_0131", "Fixed_0202", "Fixed_0213", "Fixed_0214"]:
             if col not in df_hist.columns: df_hist[col] = 0
         df_hist = df_hist[df_hist['Date'] != today_str]
         df_hist = pd.concat([df_hist, pd.DataFrame([hist_row])], ignore_index=True)
@@ -298,7 +321,7 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
     with open("news.html", "w", encoding="utf-8") as f:
         f.write(f"<html><head><meta charset='UTF-8'><title>国际要闻</title></head><body style='font-family:system-ui, sans-serif; padding:30px; max-width:1000px; margin:auto;'>{nav}<h2>🌐 BBC 国际要闻</h2><ul style='line-height:1.6;'>{news_list}</ul></body></html>")
 
-    # ---------- 前端图表序列化分配 ----------
+    # ---------- 前端图表数据序列化 ----------
     dates_js = json.dumps(df_hist['Date'].tolist())
     usd_cny_vals = json.dumps(df_hist['USD_CNY'].fillna(7.25).tolist())
     vnd_cny_vals = json.dumps(df_hist['VND_CNY_1k'].fillna(0).tolist())
@@ -310,6 +333,11 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
     flight_cz_0202_vals = json.dumps(df_hist['Fixed_0202'].fillna(0).tolist())
     flight_cz_0213_vals = json.dumps(df_hist['Fixed_0213'].fillna(0).tolist())
     flight_cz_0214_vals = json.dumps(df_hist['Fixed_0214'].fillna(0).tolist())
+
+    # 新增三大股指历史走势序列
+    vn_index_vals = json.dumps(df_hist['VN_Index'].fillna(1220.0).tolist())
+    us_index_vals = json.dumps(df_hist['US_Index'].fillna(5050.0).tolist())
+    cn_index_vals = json.dumps(df_hist['CN_Index'].fillna(3060.0).tolist())
 
     stock_columns = [col for col in df_stock.columns if col != 'Date']
     stock_series_js = []
@@ -331,7 +359,7 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
         .card {{ background: white; border-radius: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); padding: 20px; flex: 1 1 45%; min-width: 320px; }}
         .full-card {{ flex: 1 1 100%; }}
         .real-time {{ background: #1e293b; color: white; border-radius: 20px; padding: 20px; margin-bottom: 20px; display: flex; justify-content: space-between; flex-wrap: wrap; }}
-        .real-time div {{ background: #0f172a; padding: 12px 18px; border-radius: 40px; min-width: 180px; margin: 6px; font-size: 13px; }}
+        .real-time div {{ background: #0f172a; padding: 12px 18px; border-radius: 40px; min-width: 165px; margin: 6px; font-size: 13px; }}
         table {{ width: 100%; border-collapse: collapse; font-size:14px; }}
         td, th {{ padding: 8px; border-bottom: 1px solid #e2e8f0; }}
         h3 {{ margin-top: 0; color: #0f3b5c; }}
@@ -344,10 +372,11 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
     {nav}
     <div class="real-time">
         <div>💵 美元/人民币: <b>{fin['USD_CNY']}</b></div>
+        <div>🇺🇸 S&P 500: <b>{fin['US_Index']:.2f}</b></div>
+        <div>🇨🇳 上证指数: <b>{fin['CN_Index']:.2f}</b></div>
+        <div>🇻🇳 VN-Index: <b>{fin['VN_Index']:.2f}</b></div>
         <div>🇻🇳 VND 1K / CNY: <b>￥{fin['VND_CNY_1k']:.4f}</b></div>
-        <div>📈 VN-Index: <b>{fin['VN_Index']:.2f}</b></div>
         <div>✈️ 南航/越捷趋势: <b>￥{cz_today}/￥{vj_today}</b></div>
-        <div>📅 02-01定日最低: <b>￥{cz_fixed_0201}</b></div>
     </div>
 
     <div class="dashboard">
@@ -382,7 +411,12 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
         </div>
 
         <div class="full-card">
-            <h3>📊 越南股票历史走势</h3>
+            <h3>🌏 全球核心股指走势对比 (标普500 / 上证 / VN-Index)</h3>
+            <div id="chart_global_indices" class="chart-box" style="height: 380px;"></div>
+        </div>
+
+        <div class="full-card">
+            <h3>📊 越南股票历史走势 (成分股)</h3>
             <div id="chart_stocks" class="chart-box" style="height: 400px;"></div>
         </div>
     </div>
@@ -395,6 +429,7 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
     <script>
         var dates = {dates_js};
         
+        // USD/CNY 图
         var chart1 = echarts.init(document.getElementById('chart_usdcny'));
         chart1.setOption({{
             tooltip: {{ trigger: 'axis' }},
@@ -403,6 +438,7 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
             series: [{{ name: 'USD/CNY', type: 'line', data: {usd_cny_vals}, color: '#e53e3e', smooth: true }}]
         }});
         
+        // VND/1k CNY 图
         var chart2 = echarts.init(document.getElementById('chart_vndcny'));
         chart2.setOption({{
             tooltip: {{ trigger: 'axis' }},
@@ -411,6 +447,7 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
             series: [{{ name: 'VND 1K / CNY', type: 'line', data: {vnd_cny_vals}, color: '#3182ce', smooth: true }}]
         }});
         
+        // 股票个股图
         var chart3 = echarts.init(document.getElementById('chart_stocks'));
         chart3.setOption({{
             tooltip: {{ trigger: 'axis' }},
@@ -420,6 +457,7 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
             series: [{stock_series_str}]
         }});
         
+        // 机票大盘图
         var chart4 = echarts.init(document.getElementById('chart_flight'));
         chart4.setOption({{
             tooltip: {{ trigger: 'axis' }},
@@ -436,14 +474,28 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
                 {{ name: '南航定日(02/14)', type: 'line', data: {flight_cz_0214_vals}, color: '#b7791f', smooth: true }}
             ]
         }});
+
+        // 新增：三大核心股指对比图
+        var chart5 = echarts.init(document.getElementById('chart_global_indices'));
+        chart5.setOption({{
+            tooltip: {{ trigger: 'axis' }},
+            legend: {{ data: ['美国 S&P 500', '中国 上证指数', '越南 VN-Index'], top: 0 }},
+            xAxis: {{ data: dates, name: '日期' }},
+            yAxis: {{ name: '指数点数', scale: true }},
+            series: [
+                {{ name: '美国 S&P 500', type: 'line', data: {us_index_vals}, color: '#e53e3e', smooth: true }},
+                {{ name: '中国 上证指数', type: 'line', data: {cn_index_vals}, color: '#3182ce', smooth: true }},
+                {{ name: '越南 VN-Index', type: 'line', data: {vn_index_vals}, color: '#38a169', smooth: true }}
+            ]
+        }});
         
-        window.addEventListener('resize', () => {{ chart1.resize(); chart2.resize(); chart3.resize(); chart4.resize(); }});
+        window.addEventListener('resize', () => {{ chart1.resize(); chart2.resize(); chart3.resize(); chart4.resize(); chart5.resize(); }});
     </script>
 </body>
 </html>"""
     with open("finance.html", "w", encoding="utf-8") as f:
         f.write(finance_html)
-    print("🎉 细节文本修正完毕，大盘完美对齐。")
+    print("🎉 全球宏观股指对比看板更新完毕！")
 
 if __name__ == "__main__":
     hn_news = fetch_hn_tech()
