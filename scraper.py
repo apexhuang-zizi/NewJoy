@@ -82,7 +82,7 @@ def fetch_world_news():
 
 # ---------- 4. 金融数据：汇率 + 股票价格 ----------
 def get_safe_price(code):
-    """稳健的价格抓取函数，扩大检索区间并清洗空值，彻底解决指数为零的问题"""
+    """稳健的价格抓取函数，扩大检索区间并清洗空值"""
     try:
         ticker = yf.Ticker(code)
         hist = ticker.history(period="1mo")
@@ -96,6 +96,27 @@ def get_safe_price(code):
             return round(price, 4)
     except Exception:
         pass
+    return 0.0
+
+def get_vn_index_direct():
+    """专为 VN-Index 打造的直连 Yahoo Chart API 终极解析函数"""
+    url = "https://query1.finance.yahoo.com/v8/finance/chart/%5EVNINDEX?interval=1d&range=7d"
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    }
+    try:
+        r = requests.get(url, headers=headers, timeout=15)
+        data = r.json()
+        result = data.get("chart", {}).get("result", [])
+        if result:
+            closes = result[0].get("indicators", {}).get("quote", [{}])[0].get("close", [])
+            # 核心清洗：过滤由于闭市或交易结算产生的 None/Null 占位符
+            valid_closes = [c for c in closes if c is not None]
+            if valid_closes:
+                print(f"🎯 通过底层 API 成功截获真实 VN-Index: {valid_closes[-1]}")
+                return round(valid_closes[-1], 2)
+    except Exception as e:
+        print(f"⚠️ 越过组件直连 VN-Index 接口时发生异常: {e}")
     return 0.0
 
 def fetch_finance():
@@ -120,7 +141,10 @@ def fetch_finance():
             price = get_safe_price(code)
         stock_data[name] = price
 
+    # 引入多重链路保障：yfinance 兜底 -> 核心直连 API -> 地区关联码兜底
     vn_index = get_safe_price("^VNINDEX")
+    if vn_index == 0:
+        vn_index = get_vn_index_direct()
     if vn_index == 0:
         vn_index = get_safe_price("VNI.HM")
         
