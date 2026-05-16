@@ -179,10 +179,12 @@ def fetch_finance():
     us_index = get_safe_price("^GSPC")
     cn_index = get_safe_price("000001.SS")
 
-    # 3. 终极本地历史数据库休市继承平滑机制（全面保护三大股指）
+    # 3. 本地历史数据库兜底继承
     try:
         if os.path.exists("history.csv"):
             df_exist = pd.read_csv("history.csv")
+            # 清洗脏数据防止污染
+            df_exist = df_exist[df_exist['Date'] != "2026-05-15"]
             if not df_exist.empty:
                 if vn_index == 0 and "VN_Index" in df_exist.columns:
                     v_idx = df_exist["VN_Index"].dropna()
@@ -280,7 +282,7 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
     
     flight_fixed_html = html_0131 + html_0201 + html_0202 + html_0213 + html_0214
 
-    # ---------- 历史数据存储更新 ----------
+    # ---------- 历史数据存储与 5/15 清洗过滤 ----------
     hist_row = {
         "Date": today_str, "USD_CNY": fin["USD_CNY"], "VND_CNY_1k": fin["VND_CNY_1k"],
         "Flight_Today": cz_today, "Fixed_Flight": cz_fixed_0201, "VJ_Today": vj_today, 
@@ -290,6 +292,8 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
     hist_file = "history.csv"
     if os.path.exists(hist_file):
         df_hist = pd.read_csv(hist_file)
+        # 【微调亮点一】强力过滤剔除 2026-05-15 异常全零行
+        df_hist = df_hist[df_hist['Date'] != "2026-05-15"]
         for col in ["USD_CNY", "Fixed_Flight", "VJ_Today", "VN_Index", "US_Index", "CN_Index", "Fixed_0131", "Fixed_0202", "Fixed_0213", "Fixed_0214"]:
             if col not in df_hist.columns: df_hist[col] = 0
         df_hist = df_hist[df_hist['Date'] != today_str]
@@ -298,11 +302,13 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
         df_hist = pd.DataFrame([hist_row])
     df_hist.tail(90).to_csv(hist_file, index=False)
 
-    # ---------- 股票历史数据保存 ----------
+    # ---------- 股票历史数据保存与 5/15 过滤 ----------
     stock_file = "stock_history.csv"
     stock_row = {"Date": today_str, **fin["Stocks"]}
     if os.path.exists(stock_file):
         df_stock = pd.read_csv(stock_file)
+        # 【微调亮点二】股票数据库同步剔除 2026-05-15 记录
+        df_stock = df_stock[df_stock['Date'] != "2026-05-15"]
         df_stock = df_stock[df_stock['Date'] != today_str]
         df_stock = pd.concat([df_stock, pd.DataFrame([stock_row])], ignore_index=True)
     else:
@@ -321,7 +327,7 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
     with open("news.html", "w", encoding="utf-8") as f:
         f.write(f"<html><head><meta charset='UTF-8'><title>国际要闻</title></head><body style='font-family:system-ui, sans-serif; padding:30px; max-width:1000px; margin:auto;'>{nav}<h2>🌐 BBC 国际要闻</h2><ul style='line-height:1.6;'>{news_list}</ul></body></html>")
 
-    # ---------- 前端图表数据序列化 ----------
+    # ---------- 前端 ECharts 序列化分配 ----------
     dates_js = json.dumps(df_hist['Date'].tolist())
     usd_cny_vals = json.dumps(df_hist['USD_CNY'].fillna(7.25).tolist())
     vnd_cny_vals = json.dumps(df_hist['VND_CNY_1k'].fillna(0).tolist())
@@ -334,7 +340,6 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
     flight_cz_0213_vals = json.dumps(df_hist['Fixed_0213'].fillna(0).tolist())
     flight_cz_0214_vals = json.dumps(df_hist['Fixed_0214'].fillna(0).tolist())
 
-    # 新增三大股指历史走势序列
     vn_index_vals = json.dumps(df_hist['VN_Index'].fillna(1220.0).tolist())
     us_index_vals = json.dumps(df_hist['US_Index'].fillna(5050.0).tolist())
     cn_index_vals = json.dumps(df_hist['CN_Index'].fillna(3060.0).tolist())
@@ -372,10 +377,10 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
     {nav}
     <div class="real-time">
         <div>💵 美元/人民币: <b>{fin['USD_CNY']}</b></div>
+        <div>🇻🇳 VND 1K / CNY: <b>￥{fin['VND_CNY_1k']:.4f}</b></div>
         <div>🇺🇸 S&P 500: <b>{fin['US_Index']:.2f}</b></div>
         <div>🇨🇳 上证指数: <b>{fin['CN_Index']:.2f}</b></div>
         <div>🇻🇳 VN-Index: <b>{fin['VN_Index']:.2f}</b></div>
-        <div>🇻🇳 VND 1K / CNY: <b>￥{fin['VND_CNY_1k']:.4f}</b></div>
         <div>✈️ 南航/越捷趋势: <b>￥{cz_today}/￥{vj_today}</b></div>
     </div>
 
@@ -429,7 +434,6 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
     <script>
         var dates = {dates_js};
         
-        // USD/CNY 图
         var chart1 = echarts.init(document.getElementById('chart_usdcny'));
         chart1.setOption({{
             tooltip: {{ trigger: 'axis' }},
@@ -438,7 +442,6 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
             series: [{{ name: 'USD/CNY', type: 'line', data: {usd_cny_vals}, color: '#e53e3e', smooth: true }}]
         }});
         
-        // VND/1k CNY 图
         var chart2 = echarts.init(document.getElementById('chart_vndcny'));
         chart2.setOption({{
             tooltip: {{ trigger: 'axis' }},
@@ -447,7 +450,6 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
             series: [{{ name: 'VND 1K / CNY', type: 'line', data: {vnd_cny_vals}, color: '#3182ce', smooth: true }}]
         }});
         
-        // 股票个股图
         var chart3 = echarts.init(document.getElementById('chart_stocks'));
         chart3.setOption({{
             tooltip: {{ trigger: 'axis' }},
@@ -457,7 +459,6 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
             series: [{stock_series_str}]
         }});
         
-        // 机票大盘图
         var chart4 = echarts.init(document.getElementById('chart_flight'));
         chart4.setOption({{
             tooltip: {{ trigger: 'axis' }},
@@ -475,7 +476,6 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
             ]
         }});
 
-        // 新增：三大核心股指对比图
         var chart5 = echarts.init(document.getElementById('chart_global_indices'));
         chart5.setOption({{
             tooltip: {{ trigger: 'axis' }},
@@ -495,7 +495,7 @@ def update_db_and_pages(hn, world, fin, flight_today_tuple):
 </html>"""
     with open("finance.html", "w", encoding="utf-8") as f:
         f.write(finance_html)
-    print("🎉 全球宏观股指对比看板更新完毕！")
+    print("🎉 看板细节微调及 5/15 历史零值数据清洗全面完毕！")
 
 if __name__ == "__main__":
     hn_news = fetch_hn_tech()
@@ -503,4 +503,4 @@ if __name__ == "__main__":
     fin_data = fetch_finance()
     flight_today_tuple = fetch_today_flight_price()
     update_db_and_pages(hn_news, world_news, fin_data, flight_today_tuple)
-    print("🚀 自动化流程全线收官！")
+    print("🚀 自动化流程调优全线收官！")
