@@ -17,48 +17,47 @@ warnings.filterwarnings('ignore')
 # ---------- 1. 配置区 ----------
 genai.configure(api_key=os.environ.get("GEMINI_API_KEY"))
 
-# 全局初始化模型时，默认直接关闭思考模式，既省 Token 又极大地提升单行翻译速度
-model = genai.GenerativeModel(
-    'models/gemini-2.5-flash',
-    generation_config={"thinking_config": {"thinking_budget": 0}}
-)
+# 恢复最简单、安全的传统初始化，防止任何由于新版参数引起的 legacy SDK 崩溃
+model = genai.GenerativeModel('models/gemini-2.5-flash')
 
 def translate_text(text, is_tech=True):
-    """通用的 Gemini 翻译函数，彻底关闭思考推理，带高强容错净化滤镜"""
+    """通用的 Gemini 翻译函数，杜绝任何实验性参数引起崩溃，纯靠特征工程清洗思考过程"""
     if not text: return ""
     domain = "技术新闻" if is_tech else "国际新闻要闻"
     
-    # 进一步在 Prompt 层面严厉申明边界
-    prompt = f"你是一个极简的{domain}单行标题翻译官。请将以下英文直接翻译成地道简短的中文。严禁输出任何前言、解释、生平、推导或内心思考过程（思绪），只需返回最终的中文翻译结果文本：\n\n{text}"
+    prompt = f"你是一个极简的{domain}单行标题翻译官。请将以下英文标题直接翻译成地道、简短的中文。严禁带有任何前言、内心思考过程（如‘思绪：’）、方案对比、分析或解释说明，只需直接返回最终的中文翻译结果文本：\n\n{text}"
     
     try:
-        # 发起请求（双重保险：显式将思维预算设为0）
+        # 使用最通用、各版本 SDK 均完美兼容的标准参数
         response = model.generate_content(
             prompt,
-            generation_config={"thinking_config": {"thinking_budget": 0}}
+            generation_config={"temperature": 0.2, "max_output_tokens": 300}
         )
         res_text = response.text.strip()
         
-        # --- 强力清洁滤镜：彻底封杀任何由于模型异常导致的思维泄漏 ---
+        # --- 强力清洁滤镜：彻底封杀并剥离任何由于模型混入的思维推理长文本 ---
         # 1. 剥离可能存在的 markdown 思考标签
         res_text = re.sub(r'(?s)<think>.*?</think>', '', res_text).strip()
         
-        # 2. 剥离可能生成的引导词前缀
-        if "最终方案" in res_text: res_text = res_text.split("最终方案")[-1].strip(":：\n ")
-        if "翻译结果" in res_text: res_text = res_text.split("翻译结果")[-1].strip(":：\n ")
-        
-        # 3. 终极截断：如果依然含有“思绪”或“Thinking”等字样且篇幅异常过长
-        if ("思绪" in res_text or "思考" in res_text or "思维" in res_text) and len(res_text) > 100:
+        # 2. 如果文本中不幸包含了“思绪”、“方案”等推理树标识，或者篇幅异常过长
+        if any(k in res_text for k in ["思绪", "思考", "思维", "最终方案", "翻译结果", "方案一"]) or len(res_text) > 120:
+            # 策略 A：尝试寻找最终翻译的定界切分符
+            for marker in ["最终方案", "最终翻译", "翻译结果", "译文如下", "：", ":"]:
+                if marker in res_text:
+                    candidate = res_text.split(marker)[-1].strip()
+                    if candidate and len(candidate) < 80 and not any(k in candidate for k in ["思绪", "方案", "思考"]):
+                        return candidate.strip("*# ")
+            
+            # 策略 B：如果切分失败，按行清洗，逆向提取最后一行完全不含思考痕迹的干净短文本
             lines = [line.strip() for line in res_text.split('\n') if line.strip()]
-            # 倒序检索，提取最后一行完全不含思考痕迹的干净文本作为译文
             for line in reversed(lines):
-                if not any(k in line for k in ["思绪", "方案", "思考", "分析", "思维", "Thinking", "Prompt"]):
-                    return line
+                if len(line) < 80 and not any(k in line for k in ["思绪", "方案", "思考", "分析", "思维", "Thinking", "Prompt"]):
+                    return line.strip("*# ")
                     
-        return res_text if res_text else "翻译处理中..."
+        return res_text if res_text else text
     except Exception as e:
         print(f"⚠️ 翻译异常: {e}")
-        return "翻译处理中..."
+        return text  # 发生异常时优雅降级返回原英文标题，确保不显示脏数据，不撑爆页面
 
 # ---------- 2. 抓取技术趋势 (Hacker News) ----------
 def fetch_hn_tech():
